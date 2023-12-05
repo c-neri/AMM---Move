@@ -9,14 +9,12 @@ module lp_account::liquidity_pool {
     use aptos_framework::option;
     use aptos_framework::math64;
     use aptos_framework::account;
-    use aptos_framework::math128;
     use aptos_framework::timestamp;
     use std::string::{Self, String};
-    use aptos_framework::string_utils;
     use aptos_framework::resource_account;
     use aptos_framework::coin::{Self, Coin};
-    use aptos_std::comparator::{Self, Result};
-    
+    use aptos_std::comparator::{Self};
+
     #[test_only]
     use std::signer;
     #[test_only]
@@ -185,10 +183,13 @@ module lp_account::liquidity_pool {
         let coin_a_type_info = type_info::type_of<CoinA>();
         let coin_b_type_info = type_info::type_of<CoinB>();
 
+        assert!(coin::is_coin_initialized<CoinA>(), ECodeForAllErrors);
+        assert!(coin::is_coin_initialized<CoinB>(), ECodeForAllErrors);
+
         if (!is_sorted(coin_a_type_info, coin_b_type_info)) {
-            create_liquidity_pool<CoinB, CoinA>();
+            create_liquidity_pool_helper<CoinB, CoinA>();
         } else {
-            create_liquidity_pool<CoinA, CoinB>();
+            create_liquidity_pool_helper<CoinA, CoinB>();
         }
     }
 
@@ -206,6 +207,9 @@ module lp_account::liquidity_pool {
         coin_a: Coin<CoinA>, 
         coin_b: Coin<CoinB>
     ): Coin<LPCoin<CoinA, CoinB>> acquires State, LiquidityPool {
+        assert!(coin::is_coin_initialized<CoinA>(), ECodeForAllErrors);
+        assert!(coin::is_coin_initialized<CoinB>(), ECodeForAllErrors);
+
         let lp_account_addr = @lp_account;
         assert!(!exists<LiquidityPool<CoinA, CoinB>>(lp_account_addr), ECodeForAllErrors);
 
@@ -225,7 +229,9 @@ module lp_account::liquidity_pool {
 
         let lp_coins = if (total_liquidity == 0) {
             let total_lp_tokens = math64::sqrt(amount_coin_a * amount_coin_b);
-            total_lp_tokens - 1000
+            // coin::mint(MINIMUM_LIQUIDITY, &liquidity_pool.lp_coin_mint_cap);
+            total_lp_tokens - MINIMUM_LIQUIDITY
+
         } else {
             let result_a =  amount_coin_a * total_liquidity / reserve_coin_a;
             let result_b =  amount_coin_b * total_liquidity / reserve_coin_b;
@@ -265,6 +271,9 @@ module lp_account::liquidity_pool {
     public fun remove_liquidity<CoinA, CoinB>(
         lp_coins_to_redeem: Coin<LPCoin<CoinA, CoinB>>
     ): (Coin<CoinA>, Coin<CoinB>) acquires State, LiquidityPool {
+        assert!(coin::is_coin_initialized<CoinA>(), ECodeForAllErrors);
+        assert!(coin::is_coin_initialized<CoinB>(), ECodeForAllErrors);
+        
         let lp_account_addr = @lp_account;
         assert!(exists<LiquidityPool<CoinA, CoinB>>(lp_account_addr), ECodeForAllErrors);
 
@@ -325,6 +334,9 @@ module lp_account::liquidity_pool {
         coin_b_in: Coin<CoinB>,
         amount_coin_b_out: u64
     ): (Coin<CoinA>, Coin<CoinB>) acquires State, LiquidityPool {
+        assert!(coin::is_coin_initialized<CoinA>(), ECodeForAllErrors);
+        assert!(coin::is_coin_initialized<CoinB>(), ECodeForAllErrors);
+
         let state = borrow_global_mut<State>(@lp_account);
         let lp_account_addr = @lp_account;
         let liquidity_pool = borrow_global_mut<LiquidityPool<CoinA, CoinB>>(lp_account_addr);
@@ -375,14 +387,15 @@ module lp_account::liquidity_pool {
         let lp_account_addr = @lp_account;
         let state = borrow_global_mut<State>(lp_account_addr);
         let lp_signer = account::create_signer_with_capability(&state.signer_cap);
-        let lp_name_symbol = generate_lp_name_symbol<CoinA, CoinB>();
+        let lp_name = generate_lp_name<CoinA, CoinB>();
+        let lp_symbol = generate_lp_symbol<CoinA, CoinB>();
 
         assert!(!exists<LiquidityPool<CoinA, CoinB>>(lp_account_addr), ECodeForAllErrors);
     
         let (burn_cap, lp_freeze, mint_cap) = coin::initialize<LPCoin<CoinA, CoinB>>(
             &lp_signer,
-            lp_name_symbol,
-            lp_name_symbol,
+            lp_name,
+            lp_symbol,
             8,
             true,
         );
@@ -404,20 +417,28 @@ module lp_account::liquidity_pool {
             CreateLiquidityPoolEvent {
                 coin_a: coin::name<CoinA>(),
                 coin_b: coin::name<CoinB>(),
-                lp_coin: lp_name_symbol,
+                lp_coin: lp_symbol,
                 creation_timestamp_seconds: timestamp::now_microseconds(),
             }
         );
     }
 
-    fun generate_lp_name_symbol<X, Y>(): String {
-        let lp_name_symbol = string::utf8(b"");
-        string::append(&mut lp_name_symbol, coin::symbol<X>());
-        string::append_utf8(&mut lp_name_symbol, b"-");
-        string::append(&mut lp_name_symbol, coin::symbol<Y>());
-        string::append_utf8(&mut lp_name_symbol, b" ");
-        string::append_utf8(&mut lp_name_symbol, b"LP token");
-        lp_name_symbol
+    fun generate_lp_name<X, Y>(): String {
+        let lp_name = string::utf8(b"");
+        string::append(&mut lp_name, coin::symbol<X>());
+        string::append_utf8(&mut lp_name, b"-");
+        string::append(&mut lp_name, coin::symbol<Y>());
+        string::append_utf8(&mut lp_name, b" ");
+        string::append_utf8(&mut lp_name, b"LP token");
+        lp_name
+    }
+
+    fun generate_lp_symbol<X, Y>(): String {
+        let lp_symbol = string::utf8(b"");
+        string::append(&mut lp_symbol, coin::symbol<X>());
+        string::append_utf8(&mut lp_symbol, b"-");
+        string::append(&mut lp_symbol, coin::symbol<Y>());
+        lp_symbol
     }
 
     fun is_sorted(coin_a_type_info: type_info::TypeInfo, coin_b_type_info: type_info::TypeInfo): bool {
@@ -4518,3 +4539,4 @@ module lp_account::liquidity_pool {
         coin::deposit<TestCoin2>(admin_address, coin_b_out);
     }
 }
+
