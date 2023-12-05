@@ -425,11 +425,10 @@ module lp_account::liquidity_pool {
 
     fun generate_lp_name<X, Y>(): String {
         let lp_name = string::utf8(b"");
-        string::append(&mut lp_name, coin::symbol<X>());
+        string::append(&mut lp_name, coin::name<X>());
         string::append_utf8(&mut lp_name, b"-");
-        string::append(&mut lp_name, coin::symbol<Y>());
-        string::append_utf8(&mut lp_name, b" ");
-        string::append_utf8(&mut lp_name, b"LP token");
+        string::append(&mut lp_name, coin::name<Y>());
+        string::append_utf8(&mut lp_name, b" LP token");
         lp_name
     }
 
