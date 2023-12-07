@@ -8,7 +8,7 @@ module lp_account::liquidity_pool {
     use aptos_framework::event;
     use aptos_framework::option;
     use aptos_framework::math64;
-    // use aptos_framework::math128;
+    use aptos_framework::math128;
     use aptos_framework::account;
     use aptos_framework::timestamp;
     use std::string::{Self, String};
@@ -225,14 +225,14 @@ module lp_account::liquidity_pool {
             abort ECodeForAllErrors
         };
     
+        if (!exists<LiquidityPool<CoinA, CoinB>>(lp_account_addr)) {
+            abort ECodeForAllErrors
+        };
+
         assert!(is_sorted(coin_a_type_info, coin_b_type_info), ECodeForAllErrors);
         assert!(coin::is_coin_initialized<CoinA>(), ECodeForAllErrors);
         assert!(coin::is_coin_initialized<CoinB>(), ECodeForAllErrors);
         assert!(coin::is_coin_initialized<LPCoin<CoinA, CoinB>>(), ECodeForAllErrors);
-        
-        if (!exists<LiquidityPool<CoinA, CoinB>>(lp_account_addr)) {
-            abort ECodeForAllErrors
-        };
 
         let state = borrow_global_mut<State>(lp_account_addr);
         let liquidity_pool = borrow_global_mut<LiquidityPool<CoinA, CoinB>>(lp_account_addr);
@@ -252,12 +252,11 @@ module lp_account::liquidity_pool {
         };
 
         let lp_coins:u64 = if (total_lp_supply == 0) {
-            let liquidity = math64::sqrt(amount_coin_a * amount_coin_b);
+            let liquidity = (math128::sqrt((amount_coin_a as u128) * (amount_coin_b as u128)) as u64);
             if(liquidity <= 1000) {
                 abort ECodeForAllErrors
             };
             let locked_lp_coins = coin::mint(1000, &liquidity_pool.lp_coin_mint_cap);
-            // let lp_coins_to_provider = coin::mint(liquidity - 1000, &liquidity_pool.lp_coin_mint_cap);
             coin::deposit(lp_account_addr, locked_lp_coins);
             liquidity - 1000
         } else {
