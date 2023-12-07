@@ -3,8 +3,8 @@ module lp_account::liquidity_pool {
     //==============================================================================================
     // Dependencies
     //==============================================================================================
-
     use std::type_info;
+    use std::vector;
     use aptos_framework::event;
     use aptos_framework::option;
     use aptos_framework::math64;
@@ -28,6 +28,8 @@ module lp_account::liquidity_pool {
     // seed for module's resource account
     const SEED: vector<u8> = b"lp account";
     const MINIMUM_LIQUIDITY: u128 = 1000;
+    const SQRT_EPSILON: u64 = 100;
+
     //==============================================================================================
     // Error codes - DO NOT MODIFY
     //==============================================================================================
@@ -211,7 +213,6 @@ module lp_account::liquidity_pool {
         let lp_account_addr = @lp_account;
         let coin_a_type_info = type_info::type_of<CoinA>();
         let coin_b_type_info = type_info::type_of<CoinB>();
-        let max_value_u64: u64 = 18446744073709551615;
 
         if (!coin::is_account_registered<LiquidityPool<CoinA, CoinB>>(lp_account_addr)) {
             abort ECodeForAllErrors
@@ -228,20 +229,16 @@ module lp_account::liquidity_pool {
         assert!(coin::is_coin_initialized<CoinA>(), ECodeForAllErrors);
         assert!(coin::is_coin_initialized<CoinB>(), ECodeForAllErrors);
         assert!(coin::is_coin_initialized<LPCoin<CoinA, CoinB>>(), ECodeForAllErrors);
-
-        let state = borrow_global_mut<State>(lp_account_addr);
+        
         if (!exists<LiquidityPool<CoinA, CoinB>>(lp_account_addr)) {
             abort ECodeForAllErrors
         };
 
+        let state = borrow_global_mut<State>(lp_account_addr);
         let liquidity_pool = borrow_global_mut<LiquidityPool<CoinA, CoinB>>(lp_account_addr);
         let amount_coin_a = coin::value(&coin_a);
         let amount_coin_b = coin::value(&coin_b);
 
-        if (amount_coin_a >= max_value_u64 || amount_coin_b >= max_value_u64) { 
-            abort ECodeForAllErrors
-        };
-    
         let reserve_coin_a = coin::value(&liquidity_pool.coin_a_reserve);
         let reserve_coin_b = coin::value(&liquidity_pool.coin_b_reserve);
 
@@ -256,7 +253,7 @@ module lp_account::liquidity_pool {
 
         let lp_coins:u64 = if (total_lp_supply == 0) {
             let liquidity = math64::sqrt(amount_coin_a * amount_coin_b);
-            if(liquidity < 1000) {
+            if(liquidity <= 1000) {
                 abort ECodeForAllErrors
             };
             let locked_lp_coins = coin::mint(1000, &liquidity_pool.lp_coin_mint_cap);
@@ -268,7 +265,7 @@ module lp_account::liquidity_pool {
             let result_b = amount_coin_b * (total_lp_supply as u64) / reserve_coin_b;
             math64::min(result_a, result_b)
         };
-    
+
         event::emit_event<SupplyLiquidityEvent>(
             &mut state.supply_liquidity_events,
             SupplyLiquidityEvent {
@@ -483,20 +480,39 @@ module lp_account::liquidity_pool {
     }
 
     fun generate_lp_name<CoinA, CoinB>(): String {
-        let lp_name = string::utf8(b"");
-        string::append(&mut lp_name, coin::symbol<CoinA>());
+        let coin_a_symbol = truncate_to_four(*string::bytes(&coin::symbol<CoinA>()));
+        let coin_b_symbol = truncate_to_four(*string::bytes(&coin::symbol<CoinB>()));
+        
+        let lp_name = string::utf8(coin_a_symbol);
         string::append_utf8(&mut lp_name, b"-");
-        string::append(&mut lp_name, coin::symbol<CoinB>());
+        string::append(&mut lp_name, string::utf8(coin_b_symbol));
         string::append_utf8(&mut lp_name, b" LP token");
+        
         lp_name
     }
 
     fun generate_lp_symbol<X, Y>(): String {
-        let lp_symbol = string::utf8(b"");
-        string::append(&mut lp_symbol, coin::symbol<X>());
+        let coin_x_symbol = truncate_to_four(*string::bytes(&coin::symbol<X>()));
+        let coin_y_symbol = truncate_to_four(*string::bytes(&coin::symbol<Y>()));
+        
+        let lp_symbol = string::utf8(coin_x_symbol);
         string::append_utf8(&mut lp_symbol, b"-");
-        string::append(&mut lp_symbol, coin::symbol<Y>());
+        string::append(&mut lp_symbol, string::utf8(coin_y_symbol));
+        
         lp_symbol
+    }
+
+    fun truncate_to_four(v: vector<u8>): vector<u8> {
+        let len = vector::length(&v);
+        if (len > 4) {
+            let to_remove = len - 4;
+            let i = 0;
+            while (i < to_remove) {
+                vector::pop_back(&mut v);
+                i = i + 1;
+            }
+        };
+        v
     }
 
     fun is_sorted(coin_a_type_info: type_info::TypeInfo, coin_b_type_info: type_info::TypeInfo): bool {
